@@ -2,7 +2,20 @@ require('dotenv').config()
 const express = require('express')
 const app = express()
 const bodyParser = require('body-parser')
+const mongoose = require('mongoose');
 
+const uri=process.env.MONGODB_URI
+mongoose.connect(uri,{useNewUrlParser:true})
+
+  mongoose.connection.on('connected', function() {
+   console.log("Connected to mongo server.");
+  
+ });
+ 
+ mongoose.connection.on('error', function(err) {
+   console.log("Could not connect to mongo server!");
+  
+ });
 
 app.use(bodyParser.json())
 
