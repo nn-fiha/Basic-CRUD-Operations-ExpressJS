@@ -3,6 +3,8 @@ const express = require('express')
 const app = express()
 const bodyParser = require('body-parser')
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const uri=process.env.MONGODB_URI
 mongoose.connect(uri,{useNewUrlParser:true})
@@ -21,7 +23,8 @@ mongoose.connect(uri,{useNewUrlParser:true})
    fname:String,
    lname:String,
    email:String,
-   age:Number
+   age:Number,
+   password:String
  },
  {
    timestamps:true
@@ -49,11 +52,48 @@ app.get('/',(req,res)=>{
 
 app.post('/users',async(req,res)=>{
    try{
-      const user=new User(req.body)
+      const salt=await bcrypt.genSalt(10)
+      const hash= await bcrypt.hash(req.body.password,salt)
+      const password=hash
+      const userObj={
+         fname:req.body.fname,
+         lname:req.body.lname,
+         email:req.body.email,
+         age:req.body.age,
+         password:password
+      }
+      const user=new User(userObj)
       await user.save()
       res.status(201).json(user)
 
    }catch(error){
+      console.error(error);
+      res.status(500).json({message:'something is wrong with the server'})
+   }
+})
+
+app.post('/users/login',async(req,res)=>{
+   try {
+      const {email,password}=req.body
+      const user= await User.findOne({email:email})
+      if(!user){
+         res.status(401).json({message:'User not found'})
+      }else{
+         const  isValidPassword=await bcrypt.compare(password, user.password)
+         if(!isValidPassword){
+            res.status(401).json({message:'wrong password'})
+         }
+         else{
+            const token= jwt.sign({email:user.email,id:user._id},process.env.JWT_SECRET)
+            const userObj=user.toJSON()
+            userObj['accessToken']=token
+            res.status(200).json(userObj)
+
+         }
+
+      }
+      
+   } catch (error) {
       console.error(error);
       res.status(500).json({message:'something is wrong with the server'})
    }
