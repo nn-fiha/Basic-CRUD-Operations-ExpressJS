@@ -99,6 +99,43 @@ app.post('/users/login',async(req,res)=>{
    }
 })
 
+//middleware to authenticate JWT access token
+
+const authenticateToken=(req,res,next)=>{
+   const authHeader=req.headers.authorization
+   const token=authHeader && authHeader.split(' ')[1]
+   if(!token){
+      res.status(401).json({message:'Unathorized user'})
+   }else{
+      jwt.verify(token,process.env.JWT_SECRET,(err,user)=>{
+         if(err){
+            res.status(401).json({message:'Unathorized user'})
+         }
+         else{
+            req.user=user
+            next()
+         }
+      })
+   }
+}
+
+app.get('/profile',authenticateToken,async(req,res)=>{
+   try {
+      const id=req.user.id
+      const user=await User.findById(id)
+      if(user){
+         res.json(user)
+      }else{
+         res.status(401).json({message:'User not found'})
+      }
+   } catch (error) {
+      console.error(error);
+      res.status(500).json({message:'something is wrong with the server'})
+   }
+})
+
+
+
 // app.get('/users',(req,res)=>{
 //    res.json(users)
 // })
