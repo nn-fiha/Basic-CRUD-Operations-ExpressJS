@@ -1,43 +1,42 @@
-require('dotenv').config()
-const express = require('express')
-const app = express()
-const bodyParser = require('body-parser')
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+require("dotenv").config();
+const express = require("express");
+const app = express();
+const bodyParser = require("body-parser");
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-const uri=process.env.MONGODB_URI
-mongoose.connect(uri,{useNewUrlParser:true})
+const uri = process.env.MONGODB_URI;
+mongoose.connect(uri, { useNewUrlParser: true });
 
-  mongoose.connection.on('connected', function() {
-   console.log("Connected to mongo server.");
-  
- });
- 
- mongoose.connection.on('error', function(err) {
-   console.log("Could not connect to mongo server!");
-  
- });
+mongoose.connection.on("connected", function () {
+  console.log("Connected to mongo server.");
+});
 
- const userSchema=new mongoose.Schema({
-   fname:String,
-   lname:String,
-   email:String,
-   age:Number,
-   password:String
- },
- {
-   timestamps:true
- }
- )
+mongoose.connection.on("error", function (err) {
+  console.log("Could not connect to mongo server!");
+});
 
- const User=mongoose.model('User',userSchema)
- 
-app.use(bodyParser.json())
+const userSchema = new mongoose.Schema(
+  {
+    fname: String,
+    lname: String,
+    email: String,
+    age: Number,
+    password: String,
+  },
+  {
+    timestamps: true,
+  }
+);
 
-app.get('/',(req,res)=>{
-   res.json({message:'Welcome to our app'})
-})
+const User = mongoose.model("User", userSchema);
+
+app.use(bodyParser.json());
+
+app.get("/", (req, res) => {
+  res.json({ message: "Welcome to our app" });
+});
 
 // let users=[]
 // let lastId=0
@@ -50,107 +49,93 @@ app.get('/',(req,res)=>{
 //    res.status(201).json(user)
 // })
 
-app.post('/users',async(req,res)=>{
-   try{
-      const salt=await bcrypt.genSalt(10)
-      const hash= await bcrypt.hash(req.body.password,salt)
-      const password=hash
-      const userObj={
-         fname:req.body.fname,
-         lname:req.body.lname,
-         email:req.body.email,
-         age:req.body.age,
-         password:password
+app.post("/users", async (req, res) => {
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(req.body.password, salt);
+    const password = hash;
+    const userObj = {
+      fname: req.body.fname,
+      lname: req.body.lname,
+      email: req.body.email,
+      age: req.body.age,
+      password: password,
+    };
+    const user = new User(userObj);
+    await user.save();
+    res.status(201).json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
+  }
+});
+
+app.post("/users/login", async (req, res) => {
+  try {
+    const { email, password, type, refreshToken } = req.body;
+    if (!type) {
+      res.status(401).json({ message: "type is not defined!" });
+    } else {
+      if (type == "email") {
+        await handleEmailLogIn(email, res, password);
+      } else {
+         handleRefreshLogin(refreshToken, res);
       }
-      const user=new User(userObj)
-      await user.save()
-      res.status(201).json(user)
-
-   }catch(error){
-      console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-   }
-})
-
-app.post('/users/login',async(req,res)=>{
-   try {
-      const {email,password}=req.body
-      const user= await User.findOne({email:email})
-      if(!user){
-         res.status(401).json({message:'User not found'})
-      }else{
-         const  isValidPassword=await bcrypt.compare(password, user.password)
-         if(!isValidPassword){
-            res.status(401).json({message:'wrong password'})
-         }
-         else{
-            const token= jwt.sign({email:user.email,id:user._id},process.env.JWT_SECRET)
-            const userObj=user.toJSON()
-            userObj['accessToken']=token
-            res.status(200).json(userObj)
-
-         }
-
-      }
-      
-   } catch (error) {
-      console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-   }
-})
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
+  }
+});
 
 //middleware to authenticate JWT access token
 
-const authenticateToken=(req,res,next)=>{
-   const authHeader=req.headers.authorization
-   const token=authHeader && authHeader.split(' ')[1]
-   if(!token){
-      res.status(401).json({message:'Unathorized user'})
-   }else{
-      jwt.verify(token,process.env.JWT_SECRET,(err,user)=>{
-         if(err){
-            res.status(401).json({message:'Unathorized user'})
-         }
-         else{
-            req.user=user
-            next()
-         }
-      })
-   }
-}
-
-app.get('/profile',authenticateToken,async(req,res)=>{
-   try {
-      const id=req.user.id
-      const user=await User.findById(id)
-      if(user){
-         res.json(user)
-      }else{
-         res.status(401).json({message:'User not found'})
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) {
+    res.status(401).json({ message: "Unathorized user" });
+    return;
+  } else {
+    jwt.verify(token, process.env.JWT_SECRET, (err, payload) => {
+      if (err) {
+        res.status(401).json({ message: "Unathorized user" });
+      } else {
+        req.user = payload;
+        next();
       }
-   } catch (error) {
-      console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-   }
-})
+    });
+  }
+};
 
-
+app.get("/profile", authenticateToken, async (req, res) => {
+  try {
+    const id = req.user.id;
+    const user = await User.findById(id);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(401).json({ message: "User not found" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
+  }
+});
 
 // app.get('/users',(req,res)=>{
 //    res.json(users)
 // })
 
-app.get('/users',async(req,res)=>{
-   try {
-      const users=await User.find({})
-      res.json(users)
-
-   } catch (error) {
-      console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-   }
-  
-})
+app.get("/users", async (req, res) => {
+  try {
+    const users = await User.find({});
+    res.json(users);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
+  }
+});
 
 // app.get('/users/:id',(req,res)=>{
 //    const id=req.params.id
@@ -163,24 +148,20 @@ app.get('/users',async(req,res)=>{
 //    }
 // })
 
-app.get('/users/:id',async(req,res)=>{
-   try {
-      const id=req.params.id
-      const user=await User.findById(id)
-      if(user){
-         res.json(user)
-      }
-      else{
-         res.status(404).json({message:'User not found'})
-      }
-      
-   } catch (error) {
-
-      console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-      
-   }
-})
+app.get("/users/:id", authenticateToken, async (req, res) => {
+  try {
+    const id = req.user.id;
+    const user = await User.findById(id);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ message: "User not found" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
+  }
+});
 
 // app.put('/users/:id',(req,res)=>{
 //    const id=req.params.id;
@@ -195,25 +176,21 @@ app.get('/users/:id',async(req,res)=>{
 //    }
 // })
 
-app.put('/users/:id',async(req,res)=>{
+app.put("/users/:id", authenticateToken, async (req, res) => {
   try {
-   const id=req.params.id;
-   const body=req.body
-   const user=await User.findByIdAndUpdate(id,body,{new:true})
-   if(user){
-      res.json(user)
-   }else{
-      res.status(404).json({message:'user not found'})
-   }
+    const id = req.user.id;
+    const body = req.body;
+    const user = await User.findByIdAndUpdate(id, body, { new: true });
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ message: "user not found" });
+    }
   } catch (error) {
-
-   console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-   
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
   }
-})
-
-
+});
 
 // app.delete('/users/:id',(req,res)=>{
 //    const id=req.params.id;
@@ -227,30 +204,72 @@ app.put('/users/:id',async(req,res)=>{
 
 // })
 
-app.delete('/users/:id',async(req,res)=>{
-   try {
-      const id=req.params.id;
-   const user=await User.findByIdAndDelete(id)
-   if(user){
-   res.json(user)
-   }else{
-      res.status(404).json({message:'user not found'})
-   }
-   } catch (error) {
-
-      console.error(error);
-      res.status(500).json({message:'something is wrong with the server'})
-      
-   }
-
-})
-
-
-
-
-
+app.delete("/users/:id", authenticateToken, async (req, res) => {
+  try {
+    const id = req.user.id;
+    const user = await User.findByIdAndDelete(id);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ message: "user not found" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "something is wrong with the server" });
+  }
+});
 
 const port = process.env.PORT; // Change the port number to any available port
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+
+function handleRefreshLogin(refreshToken, res) {
+   if (!refreshToken) {
+      res.status(401).json({ message: "refreshToken is not defined!" });
+   } else {
+      jwt.verify(refreshToken, process.env.JWT_SECRET, async (err, payload) => {
+         if (err) {
+            res.status(401).json({ message: "Unathorized" });
+         } else {
+            const id = payload.id;
+            const user = await User.findById(id);
+            if (!user) {
+               res.status(401).json({ message: "Unathorized" });
+            } else {
+               getUserToken(user, res);
+            }
+
+         }
+      });
+   }
+}
+
+async function handleEmailLogIn(email, res, password) {
+   const user = await User.findOne({ email: email });
+   if (!user) {
+      res.status(401).json({ message: "User not found" });
+   } else {
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+         res.status(401).json({ message: "wrong password" });
+      } else {
+         getUserToken(user, res);
+      }
+   }
+}
+
+function getUserToken(user, res) {
+  const accessToken = jwt.sign(
+    { email: user.email, id: user._id },
+    process.env.JWT_SECRET,
+    { expiresIn: "2d" }
+  );
+  const refreshToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "30d",
+  });
+  const userObj = user.toJSON();
+  userObj["accessToken"] = accessToken;
+  userObj["refreshToken"] = refreshToken;
+  res.status(200).json(userObj);
+}
