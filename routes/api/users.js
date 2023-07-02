@@ -1,48 +1,74 @@
 const express = require("express");
 const router = express.Router();
+const { body, validationResult } = require("express-validator");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../../models/User");
 const authenticateToken = require("../../middleware/auth");
+const {
+  reconstructFieldPath,
+} = require("express-validator/src/field-selection");
 
-router.post("/", async (req, res) => {
-  try {
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(req.body.password, salt);
-    const password = hash;
-    const userObj = {
-      fname: req.body.fname,
-      lname: req.body.lname,
-      email: req.body.email,
-      age: req.body.age,
-      password: password,
-    };
-    const user = new User(userObj);
-    await user.save();
-    res.status(201).json(user);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "something is wrong with the server" });
+router.post(
+  "/",
+  [
+    body("fname", "fname is required").notEmpty(),
+    body("lname", "lname is required").notEmpty(),
+    body("email", "Please enter a valid email").notEmpty().isEmail(),
+    body("age").optional().isNumeric(),
+    body("password", "Password should be in 6 or more characters")
+      .notEmpty()
+      .isLength({ min: 6 }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash(req.body.password, salt);
+      const password = hash;
+      const userObj = {
+        fname: req.body.fname,
+        lname: req.body.lname,
+        email: req.body.email,
+        age: req.body.age,
+        password: password,
+      };
+      const user = new User(userObj);
+      await user.save();
+      res.status(201).json(user);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "something is wrong with the server" });
+    }
   }
-});
+);
 
-router.post("/login", async (req, res) => {
-  try {
-    const { email, password, type, refreshToken } = req.body;
-    if (!type) {
-      res.status(401).json({ message: "type is not defined!" });
-    } else {
+router.post(
+  "/login",
+  [body("type", "type is required").notEmpty(),
+  body("type", "type must be email or refresh").isIn(["email","refresh"])
+],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array()});
+      }
+      const { email, password, type, refreshToken } = req.body;
       if (type == "email") {
         await handleEmailLogIn(email, res, password);
       } else {
         handleRefreshLogin(refreshToken, res);
       }
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "something is wrong with the server" });
     }
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "something is wrong with the server" });
   }
-});
+);
 
 router.get("/profile", authenticateToken, async (req, res) => {
   try {
@@ -59,7 +85,7 @@ router.get("/profile", authenticateToken, async (req, res) => {
   }
 });
 
-router.get("/",authenticateToken, async (req, res) => {
+router.get("/", authenticateToken, async (req, res) => {
   try {
     const users = await User.find({});
     res.json(users);
@@ -100,7 +126,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
   }
 });
 
-router.delete("/:id",authenticateToken, async (req, res) => {
+router.delete("/:id", authenticateToken, async (req, res) => {
   try {
     const id = req.params.id;
     const user = await User.findByIdAndDelete(id);
